@@ -8,9 +8,65 @@ import { normalizeBrTags } from './multiline-utils.ts'
 //   Flowcharts: graph TD / flowchart LR
 //   State diagrams: stateDiagram-v2
 //
-// Line-by-line regex approach — the grammar is regular enough
-// that we don't need a grammar generator or full parser combinator.
+// Statements are first split with a small delimiter-aware scanner, then parsed
+// with regular expressions. This keeps semicolons inside labels intact.
 // ============================================================================
+
+/**
+ * Split physical lines and top-level semicolon-separated Mermaid statements.
+ * Semicolons inside quotes or node-label delimiters are preserved verbatim.
+ */
+export function splitMermaidStatements(text: string): string[] {
+  const statements: string[] = []
+
+  for (const physicalLine of text.split(/\r?\n/)) {
+    let statement = ''
+    let quote: '"' | "'" | null = null
+    let escaped = false
+    const closingDelimiters: string[] = []
+
+    const pushStatement = (): void => {
+      const trimmed = statement.trim()
+      if (trimmed.length > 0 && !trimmed.startsWith('%%')) statements.push(trimmed)
+      statement = ''
+    }
+
+    for (const char of physicalLine) {
+      if (quote) {
+        statement += char
+        if (escaped) {
+          escaped = false
+        } else if (char === '\\') {
+          escaped = true
+        } else if (char === quote) {
+          quote = null
+        }
+        continue
+      }
+
+      if (char === '"' || char === "'") {
+        quote = char
+        statement += char
+        continue
+      }
+
+      if (char === '[') closingDelimiters.push(']')
+      else if (char === '(') closingDelimiters.push(')')
+      else if (char === '{') closingDelimiters.push('}')
+      else if (char === closingDelimiters[closingDelimiters.length - 1]) closingDelimiters.pop()
+
+      if (char === ';' && closingDelimiters.length === 0) {
+        pushStatement()
+      } else {
+        statement += char
+      }
+    }
+
+    pushStatement()
+  }
+
+  return statements
+}
 
 /**
  * Parse Mermaid text into a logical graph structure.
@@ -18,7 +74,7 @@ import { normalizeBrTags } from './multiline-utils.ts'
  * Throws on invalid/unsupported input.
  */
 export function parseMermaid(text: string): MermaidGraph {
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('%%'))
+  const lines = splitMermaidStatements(text)
 
   if (lines.length === 0) {
     throw new Error('Empty mermaid diagram')
@@ -396,7 +452,7 @@ function parseStyleProps(propsStr: string): Record<string, string> {
  *
  * Optional label: -->|label text|
  */
-const ARROW_REGEX = /^(<)?(-->|-.->|==>|---|-\.-|===)(?:\|([^|]*)\|)?/
+const ARROW_REGEX = /^(<)?(-->|-\.->|==>|---|-\.-|===)(?:\|([^|]*)\|)?/
 
 /**
  * Text-embedded label regex — matches "-- label -->", "-. label .->", "== label ==>" syntax.
@@ -404,7 +460,7 @@ const ARROW_REGEX = /^(<)?(-->|-.->|==>|---|-\.-|===)(?:\|([^|]*)\|)?/
  *
  * Based on PR #36 by @liuxiaopai-ai (https://github.com/lukilabs/beautiful-mermaid/pull/36)
  */
-const TEXT_ARROW_REGEX = /^(<)?(--|-\.|==)\s+(.+?)\s+(-->|---|\.\->|-\.\-|==>|===)/
+const TEXT_ARROW_REGEX = /^(<)?(--|-\.|==)\s*(.+?)\s*(-->|---|\.->|-\.-|==>|===)/
 
 /**
  * Node shape patterns — ordered from most specific delimiters to least.
@@ -435,9 +491,6 @@ const NODE_PATTERNS: Array<{ regex: RegExp; shape: NodeShape }> = [
   { regex: /^([\w-]+)\((.+?)\)/,         shape: 'rounded' },       // A(text)
   { regex: /^([\w-]+)\{(.+?)\}/,         shape: 'diamond' },       // A{text}
 ]
-
-/** Regex for a bare node reference (just an ID, no shape brackets) */
-const BARE_NODE_REGEX = /^([\w-]+)/
 
 /** Regex for ::: class shorthand suffix — matches :::className immediately after a node */
 const CLASS_SHORTHAND_REGEX = /^:::([\w][\w-]*)/
@@ -582,13 +635,13 @@ function consumeNode(
   // If it already exists, do NOT track it in the current subgraph;
   // nodes belong to the subgraph where they're first defined.
   if (id === null) {
-    const bareMatch = text.match(BARE_NODE_REGEX)
-    if (bareMatch) {
-      id = bareMatch[1]!
+    const bareId = consumeBareNodeId(text)
+    if (bareId) {
+      id = bareId
       if (!graph.nodes.has(id)) {
         registerNode(graph, subgraphStack, { id, label: id, shape: 'rectangle' })
       }
-      remaining = text.slice(bareMatch[0].length)
+      remaining = text.slice(id.length)
     }
   }
 
@@ -602,6 +655,31 @@ function consumeNode(
   }
 
   return { id, remaining }
+}
+
+/**
+ * Consume a bare node ID without swallowing the leading hyphens of an
+ * immediately adjacent arrow (for example, `A-->B` or `A--label-->B`).
+ */
+function consumeBareNodeId(text: string): string | null {
+  let end = 0
+
+  while (end < text.length && /[\w-]/.test(text[end]!)) {
+    if (end > 0) {
+      const suffix = text.slice(end)
+      if (
+        ARROW_REGEX.test(suffix)
+        || TEXT_ARROW_REGEX.test(suffix)
+        || suffix.startsWith('&')
+        || suffix.startsWith(':::')
+      ) {
+        break
+      }
+    }
+    end++
+  }
+
+  return end > 0 ? text.slice(0, end) : null
 }
 
 /** Register a node in the graph and track it in the current subgraph */

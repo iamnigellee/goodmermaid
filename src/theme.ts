@@ -11,6 +11,8 @@
 // colors, and the SVG adapts. No light/dark mode detection needed.
 // ============================================================================
 
+import { escapeXmlAttribute, sanitizeCssColor, sanitizeFontName } from './sanitize.ts'
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -236,8 +238,9 @@ export function fromShikiTheme(theme: ShikiThemeLike): DiagramColors {
  * a blended value from --fg and --bg using color-mix().
  */
 export function buildStyleBlock(font: string, hasMonoFont: boolean): string {
+  const safeFont = sanitizeFontName(font)
   const fontImports = [
-    `@import url('https://fonts.googleapis.com/css2?family=${encodeURIComponent(font)}:wght@400;500;600;700&amp;display=swap');`,
+    `@import url('https://fonts.googleapis.com/css2?family=${encodeURIComponent(safeFont)}:wght@400;500;600;700&amp;display=swap');`,
     ...(hasMonoFont
       ? [`@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&amp;display=swap');`]
       : []),
@@ -263,7 +266,7 @@ export function buildStyleBlock(font: string, hasMonoFont: boolean): string {
   return [
     '<style>',
     `  ${fontImports.join('\n  ')}`,
-    `  text { font-family: '${font}', system-ui, sans-serif; }`,
+    `  text { font-family: '${safeFont}', system-ui, sans-serif; }`,
     ...(hasMonoFont ? [`  .mono { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', ui-monospace, monospace; }`] : []),
     `  svg {${derivedVars}`,
     `  }`,
@@ -284,21 +287,30 @@ export function svgOpenTag(
   colors: DiagramColors,
   transparent?: boolean,
 ): string {
+  const bg = sanitizeCssColor(colors.bg, DEFAULTS.bg) ?? DEFAULTS.bg
+  const fg = sanitizeCssColor(colors.fg, DEFAULTS.fg) ?? DEFAULTS.fg
+  const line = sanitizeCssColor(colors.line)
+  const accent = sanitizeCssColor(colors.accent)
+  const muted = sanitizeCssColor(colors.muted)
+  const surface = sanitizeCssColor(colors.surface)
+  const border = sanitizeCssColor(colors.border)
+
   // Build the style string with only the provided color variables
   const vars = [
-    `--bg:${colors.bg}`,
-    `--fg:${colors.fg}`,
-    colors.line    ? `--line:${colors.line}` : '',
-    colors.accent  ? `--accent:${colors.accent}` : '',
-    colors.muted   ? `--muted:${colors.muted}` : '',
-    colors.surface ? `--surface:${colors.surface}` : '',
-    colors.border  ? `--border:${colors.border}` : '',
+    `--bg:${bg}`,
+    `--fg:${fg}`,
+    line    ? `--line:${line}` : '',
+    accent  ? `--accent:${accent}` : '',
+    muted   ? `--muted:${muted}` : '',
+    surface ? `--surface:${surface}` : '',
+    border  ? `--border:${border}` : '',
   ].filter(Boolean).join(';')
 
   const bgStyle = transparent ? '' : ';background:var(--bg)'
+  const style = escapeXmlAttribute(`${vars}${bgStyle}`)
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" ` +
-    `width="${width}" height="${height}" style="${vars}${bgStyle}">`
+    `width="${width}" height="${height}" style="${style}">`
   )
 }

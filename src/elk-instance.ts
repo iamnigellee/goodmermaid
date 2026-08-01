@@ -28,6 +28,32 @@ interface RawFakeWorker {
 let elk: unknown = null
 let rawWorker: RawFakeWorker | null = null
 
+type ElkInitializer = () => unknown
+
+const defaultElkInitializer: ElkInitializer = () => new ELKBundled()
+let elkInitializer: ElkInitializer = defaultElkInitializer
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+/** Validate the private ELK worker interface used by the synchronous adapter. */
+function getRawWorker(instance: unknown): RawFakeWorker {
+  if (!isRecord(instance) || !isRecord(instance.worker) || !isRecord(instance.worker.worker)) {
+    throw new Error('ELK initialization failed: required private worker.worker interface is unavailable')
+  }
+
+  const worker = instance.worker.worker
+  if (typeof worker.postMessage !== 'function' || !('onmessage' in worker)) {
+    throw new Error('ELK initialization failed: required private FakeWorker interface is unavailable')
+  }
+  if (!isRecord(worker.dispatcher) || typeof worker.dispatcher.saveDispatch !== 'function') {
+    throw new Error('ELK initialization failed: required private dispatcher.saveDispatch() interface is unavailable')
+  }
+
+  return worker as unknown as RawFakeWorker
+}
+
 /**
  * Ensure the ELK singleton exists.
  *
@@ -42,35 +68,62 @@ function ensureElk(): void {
   // Capture setTimeout(0) callbacks queued during ELK construction
   const pending: (() => void)[] = []
   const origSetTimeout = globalThis.setTimeout
-  // @ts-ignore — simplified signature for our interception
-  globalThis.setTimeout = (fn: () => void, delay?: number) => {
-    if (delay === 0) { pending.push(fn); return 0 }
-    return origSetTimeout(fn, delay)
-  }
-
-  // Bun defines `self` (= globalThis) but not `document`, which tricks
-  // elk-worker.min.js into taking the Web Worker branch instead of the
-  // CJS branch. Temporarily hide `self` so it exports {Worker: FakeWorker}.
   const g = globalThis as Record<string, unknown>
-  const hadSelf = 'self' in g
-  const origSelf = g.self
-  if (hadSelf && typeof g.document === 'undefined') {
-    delete g.self
+  const selfDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'self')
+  const shouldHideSelf = selfDescriptor !== undefined && typeof g.document === 'undefined'
+
+  let instance: unknown
+  try {
+    // @ts-ignore — simplified signature for intercepting ELK's zero-delay callbacks
+    globalThis.setTimeout = (fn: () => void, delay?: number) => {
+      if (delay === 0) { pending.push(fn); return 0 }
+      return origSetTimeout(fn, delay)
+    }
+
+    // Bun defines `self` (= globalThis) but not `document`, which tricks
+    // elk-worker.min.js into taking the Web Worker branch instead of the
+    // CJS branch. Temporarily hide `self` so it exports {Worker: FakeWorker}.
+    if (shouldHideSelf && !Reflect.deleteProperty(g, 'self')) {
+      throw new Error('ELK initialization failed: unable to temporarily hide globalThis.self')
+    }
+
+    instance = elkInitializer()
+  } finally {
+    globalThis.setTimeout = origSetTimeout
+    if (selfDescriptor) {
+      Object.defineProperty(globalThis, 'self', selfDescriptor)
+    } else {
+      Reflect.deleteProperty(g, 'self')
+    }
   }
-
-  elk = new ELKBundled()
-
-  // Restore self
-  if (hadSelf) g.self = origSelf
-
-  // Restore setTimeout immediately
-  globalThis.setTimeout = origSetTimeout
 
   // Flush captured callbacks synchronously — registers layout algorithms
-  pending.forEach(fn => fn())
+  try {
+    pending.forEach(fn => fn())
 
-  // Cache the raw FakeWorker for elkLayoutSync()
-  rawWorker = (elk as unknown as { worker: { worker: RawFakeWorker } }).worker.worker
+    // Cache only after initialization and private-interface validation succeed.
+    const worker = getRawWorker(instance)
+    elk = instance
+    rawWorker = worker
+  } catch (error) {
+    elk = null
+    rawWorker = null
+    throw error
+  }
+}
+
+/** Replace the ELK constructor and clear the singleton for robustness tests. */
+export function __setElkInitializerForTests(initializer: ElkInitializer): void {
+  elkInitializer = initializer
+  elk = null
+  rawWorker = null
+}
+
+/** Restore the production ELK constructor and clear the singleton. */
+export function __resetElkForTests(): void {
+  elkInitializer = defaultElkInitializer
+  elk = null
+  rawWorker = null
 }
 
 /**
@@ -84,14 +137,18 @@ function ensureElk(): void {
  */
 export function elkLayoutSync(graph: ElkNode): ElkNode {
   ensureElk()
+  const worker = rawWorker
+  if (!worker) {
+    throw new Error('ELK synchronous adapter is unavailable after initialization')
+  }
 
   let result: ElkNode | undefined
   let error: unknown
 
   // Replace onmessage to intercept the result synchronously
   // (the dispatcher calls this directly, without setTimeout)
-  const origOnmessage = rawWorker!.onmessage
-  rawWorker!.onmessage = (answer: { data: Record<string, unknown> }) => {
+  const origOnmessage = worker.onmessage
+  worker.onmessage = (answer: { data: Record<string, unknown> }) => {
     if (answer.data.error) {
       error = answer.data.error
     } else {
@@ -102,10 +159,11 @@ export function elkLayoutSync(graph: ElkNode): ElkNode {
   // Call dispatcher.saveDispatch directly — bypasses FakeWorker.postMessage's
   // setTimeout(0) wrapper. The dispatcher processes the layout synchronously
   // and calls rawWorker.onmessage with the result.
-  rawWorker!.dispatcher.saveDispatch({ data: { id: 0, cmd: 'layout', graph } as unknown as Record<string, unknown> })
-
-  // Restore original handler
-  rawWorker!.onmessage = origOnmessage
+  try {
+    worker.dispatcher.saveDispatch({ data: { id: 0, cmd: 'layout', graph } as unknown as Record<string, unknown> })
+  } finally {
+    worker.onmessage = origOnmessage
+  }
 
   if (error) throw error
   if (!result) throw new Error('ELK layout did not return synchronously')
