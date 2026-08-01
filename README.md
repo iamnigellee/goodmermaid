@@ -286,6 +286,60 @@ The `fromShikiTheme()` function intelligently maps VS Code editor colors to diag
 
 ---
 
+## Mermaid Syntax Support
+
+`beautiful-mermaid` implements a practical subset of Mermaid syntax. In the tables below, **Basic** means the documented core forms are supported, **Experimental** means the feature follows a Mermaid beta syntax, and **Full** would mean complete compatibility with Mermaid (no diagram type currently has that status). `ASCII` includes both plain ASCII and Unicode box-drawing output.
+
+### Diagram Types
+
+| Diagram type | Header | SVG | ASCII | Status | Scope and test sources |
+|---|---|:---:|:---:|---|---|
+| Flowchart | `graph TD` / `flowchart LR` | ✓ | ✓ | Basic | Nodes, edges, groups, directions, and the styling subset below. `src/__tests__/integration.test.ts`, `src/__tests__/ascii.test.ts`, `src/__tests__/readme-examples.test.ts` |
+| State | `stateDiagram-v2` (also `stateDiagram`) | ✓ | ✓ | Basic | Transitions, descriptions/aliases, start/end pseudostates, composite states, and direction overrides. ASCII shares the flowchart pipeline; there is no dedicated end-to-end ASCII state fixture. `src/__tests__/parser.test.ts`, `src/__tests__/integration.test.ts`, `src/__tests__/readme-examples.test.ts` |
+| Sequence | `sequenceDiagram` | ✓ | ✓ | Basic | Participants/actors, messages, notes, and structural blocks; `+`/`-` activation boxes are SVG-only. `src/__tests__/sequence-parser.test.ts`, `src/__tests__/sequence-integration.test.ts`, `src/__tests__/ascii.test.ts` |
+| Class | `classDiagram` | ✓ | ✓ | Basic | Class members/annotations and the documented relationship subset. Namespace declarations are parsed but are not rendered as groups. `src/__tests__/class-parser.test.ts`, `src/__tests__/class-integration.test.ts`, `src/__tests__/ascii.test.ts`, `src/__tests__/class-arrow-directions.test.ts` |
+| ER | `erDiagram` | ✓ | ✓ | Basic | Entities, attributes/keys, relationship labels, cardinalities, and identifying/non-identifying lines. `src/__tests__/er-parser.test.ts`, `src/__tests__/er-integration.test.ts`, `src/__tests__/ascii.test.ts` |
+| XY chart | `xychart-beta` | ✓ | ✓ | Experimental | Bar, line, mixed/multi-series charts, axes, ranges, titles, and horizontal orientation. `src/__tests__/xychart-integration.test.ts`, `src/__tests__/xychart-ascii.test.ts`, `src/__tests__/readme-examples.test.ts` |
+
+### Syntax Features
+
+`✓` means supported in that output, `△` means output-specific or partial support, and `✗` means unsupported. Specialized diagrams use their own parsers, so flowchart/state syntax does not automatically apply to sequence, class, ER, or XY charts.
+
+| Syntax feature | SVG / ASCII | Example and limits | Test source |
+|---|---|---|---|
+| Flowchart headers | ✓ / ✓ | `graph LR`, `flowchart TD`; directions accepted: `TD`, `TB`, `LR`, `BT`, `RL` | `src/__tests__/parser.test.ts`, `src/__tests__/ascii.test.ts`, `src/__tests__/svg-integrity.test.ts` |
+| State header | ✓ / ✓ | `stateDiagram-v2`; `stateDiagram` is also accepted | `src/__tests__/parser.test.ts`, `src/__tests__/integration.test.ts`, `src/__tests__/readme-examples.test.ts` |
+| Sequence header | ✓ / ✓ | `sequenceDiagram`; put the header and following statements on separate lines | `src/__tests__/sequence-integration.test.ts`, `src/__tests__/ascii.test.ts`, `src/__tests__/readme-examples.test.ts` |
+| Class header | ✓ / ✓ | `classDiagram`; put the header and following statements on separate lines | `src/__tests__/class-integration.test.ts`, `src/__tests__/ascii.test.ts`, `src/__tests__/readme-examples.test.ts` |
+| ER header | ✓ / ✓ | `erDiagram`; put the header and following statements on separate lines | `src/__tests__/er-integration.test.ts`, `src/__tests__/ascii.test.ts`, `src/__tests__/readme-examples.test.ts` |
+| XY chart header | ✓ / ✓ | `xychart-beta`; put directives on separate lines | `src/__tests__/xychart-integration.test.ts`, `src/__tests__/xychart-ascii.test.ts`, `src/__tests__/readme-examples.test.ts` |
+| Top-level semicolon statements | ✓ / ✓ | Flowchart/state parser only: `graph LR; A --> B`; semicolons inside quoted or delimited labels are preserved. Not supported as a general separator by the specialized parsers. | `src/__tests__/syntax-compat.test.ts`, `src/__tests__/readme-examples.test.ts` |
+| Compact flowchart arrows | ✓ / ✓ | `A-->B` and `A--text-->B` are equivalent to spaced forms. State transitions also allow optional surrounding spaces. | `src/__tests__/syntax-compat.test.ts`, `src/__tests__/parser.test.ts` |
+| Flowchart node shapes | ✓ / ✓ | Bare `A` plus `A[text]`, `A(text)`, `A{text}`, `A([text])`, `A((text))`, `A[[text]]`, `A(((text)))`, `A{{text}}`, `A[(db)]`, `A>note]`, `A[/trap\]`, `A[\trap/]`. ASCII uses shape-specific box/corner approximations. | `src/__tests__/parser.test.ts`, `src/__tests__/integration.test.ts`, `src/__tests__/renderer.test.ts` |
+| Flowchart edge styles | ✓ / ✓ | Directed `-->`, dotted `-.->`, thick `==>`, and no-arrow `---`; dotted/thick no-arrow forms `-.-` and `===` are also accepted. | `src/__tests__/parser.test.ts`, `src/__tests__/integration.test.ts`, `src/__tests__/ascii-edge-styles.test.ts` |
+| Flowchart edge labels | ✓ / ✓ | Pipe form <code>--&vert;text&vert;</code> and embedded form `-- text -->`; dotted and thick equivalents are supported. | `src/__tests__/parser.test.ts`, `src/__tests__/integration.test.ts`, `src/__tests__/ascii-edge-styles.test.ts` |
+| Chained, parallel, and bidirectional flowchart edges | ✓ / ✓ | `A --> B --> C`, `A & B --> C & D`, `<-->`, `<-.->`, `<==>` | `src/__tests__/parser.test.ts`, `src/__tests__/integration.test.ts`, `src/__tests__/renderer.test.ts` |
+| `linkStyle` | ✓ / ✗ | Flowchart/state SVG only: numeric indices, comma-separated indices, and `default`; rendered properties are `stroke` and `stroke-width`. | `src/__tests__/linkstyle.test.ts`, `src/__tests__/readme-examples.test.ts` |
+| `classDef` and class assignment | ✓ / ✗ | Flowchart SVG only: `classDef hot fill:#f00`, `class A,B hot`, and node suffix `A:::hot`. ASCII currently does not apply these styles visually. | `src/__tests__/parser.test.ts`, `src/__tests__/renderer.test.ts` |
+| Node `style` statement | ✓ / ✗ | Flowchart SVG only: `style A,B fill:#f00,stroke:#333`; rendered node properties are `fill`, `stroke`, `stroke-width`, and text `color`. | `src/__tests__/parser.test.ts`, `src/__tests__/integration.test.ts`, `src/__tests__/renderer.test.ts` |
+| Flowchart subgraphs | ✓ / ✓ | `subgraph id [Label] ... end`, including nested subgraphs | `src/__tests__/parser.test.ts`, `src/__tests__/integration.test.ts`, `src/__tests__/ascii.test.ts` |
+| Root flow direction | ✓ / △ | SVG preserves `TD`/`TB`, `LR`, `BT`, and `RL`. ASCII preserves `TD`/`TB`, `LR`, and `BT`, but currently normalizes `RL` to `LR`. | `src/__tests__/parser.test.ts`, `src/__tests__/integration.test.ts`, `src/__tests__/ascii.test.ts` |
+| Direction overrides | ✓ / △ | `direction LR` inside a flowchart subgraph or at state/composite-state scope. ASCII normalizes subgraph `BT` to `TD` and `RL` to `LR`. | `src/__tests__/parser.test.ts`, `src/__tests__/ascii.test.ts` |
+| Sequence participants, messages, blocks, and notes | ✓ / ✓ | `participant`/`actor`; solid/dashed/open messages; `loop`, `alt`/`else`, `opt`, `par`/`and`, `critical`, `break`, `rect`; `Note left of`/`right of`/`over` | `src/__tests__/sequence-parser.test.ts`, `src/__tests__/sequence-integration.test.ts`, `src/__tests__/ascii-multiline.test.ts` |
+| Sequence `autonumber` | ✗ / ✗ | The directive is currently ignored; messages are not numbered. | No positive test; confirmed by `src/sequence/parser.ts` and `src/ascii/sequence.ts` |
+| XY chart directives and orientation | ✓ / ✓ | `title`, categorical/numeric `x-axis`, ranged/titled `y-axis`, `bar`, `line`, multiple series, and `xychart-beta horizontal` | `src/__tests__/xychart-integration.test.ts`, `src/__tests__/xychart-ascii.test.ts`, `src/__tests__/readme-examples.test.ts` |
+| `%%` comments | ✓ / ✓ | Whole statements/lines beginning with `%%` are ignored; trailing inline comments are not a documented part of this subset. | `src/__tests__/parser.test.ts`, `src/__tests__/ascii.test.ts` |
+
+### Not Supported or Out of Scope
+
+- Other Mermaid diagram families such as `gantt`, `pie`, `mindmap`, `gitGraph`, `journey`, `timeline`, `requirementDiagram`, `quadrantChart`, `sankey-beta`, `block-beta`, `packet-beta`, and `architecture-beta` are not routed to a renderer (`src/index.ts`, `src/ascii/index.ts`).
+- Advanced flowchart forms outside the explicit parser patterns are not supported, including `click`/callback links, edge IDs and animation, image/icon nodes, the general `@{ shape: ... }` form, and Mermaid init/config directives (`src/parser.ts`).
+- Advanced state constructs such as choice/fork/join markers, concurrency regions, and state notes are not parsed (`src/parser.ts`).
+- Sequence `autonumber`, `box`, `create`, and `destroy` are not implemented. Standalone `activate A` / `deactivate A` lines are ignored; activation via message suffixes such as `A->>+B` is supported in SVG (`src/sequence/parser.ts`).
+- Styling support is deliberately narrow: flowchart/state `linkStyle` affects SVG only, and flowchart `classDef`/`class`/`style` affects SVG only. Full Mermaid CSS, theme directives, and interactive callbacks are out of scope.
+
+This is a **Mermaid-format subset**, not a complete Mermaid implementation. Use the official Mermaid renderer when full syntax compatibility is required.
+
 ## Supported Diagrams
 
 ### Flowcharts
@@ -298,7 +352,7 @@ graph TD
   C --> D
 ```
 
-All directions supported: `TD` (top-down), `LR` (left-right), `BT` (bottom-top), `RL` (right-left).
+SVG preserves all directions: `TD`/`TB` (top-down), `LR` (left-right), `BT` (bottom-top), and `RL` (right-left). ASCII currently normalizes `RL` to `LR`.
 
 ### State Diagrams
 
@@ -362,7 +416,7 @@ graph TD
 
 Index-specific styles override the default. Supported properties: `stroke`, `stroke-width`.
 
-Works in both flowcharts and state diagrams.
+For SVG output, this works in both flowcharts and state diagrams; ASCII does not apply `linkStyle`.
 
 ### XY Charts
 
