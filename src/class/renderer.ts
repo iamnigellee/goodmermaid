@@ -1,6 +1,7 @@
 import type { PositionedClassDiagram, PositionedClassNode, PositionedClassRelationship, ClassMember, RelationshipType } from './types.ts'
-import type { DiagramColors } from '../theme.ts'
-import { svgOpenTag, buildStyleBlock } from '../theme.ts'
+import type { FontMode } from '../types.ts'
+import type { DiagramColors, ResolvedColors } from '../theme.ts'
+import { applyResolvedColors, buildStaticStyleBlock, buildStyleBlock, svgOpenTag, svgOpenTagStatic } from '../theme.ts'
 import { FONT_SIZES, FONT_WEIGHTS, STROKE_WIDTHS, estimateTextWidth, TEXT_BASELINE_SHIFT } from '../styles.ts'
 import { CLS } from './layout.ts'
 import { renderMultilineText, escapeXml as escapeXmlUtil } from '../multiline-utils.ts'
@@ -36,13 +37,19 @@ export function renderClassSvg(
   diagram: PositionedClassDiagram,
   colors: DiagramColors,
   font: string = 'Inter',
-  transparent: boolean = false
+  transparent: boolean = false,
+  resolved: ResolvedColors | null = null,
+  fontMode: FontMode = 'external',
 ): string {
   const parts: string[] = []
 
   // SVG root with CSS variables + style block (with mono font) + defs
-  parts.push(svgOpenTag(diagram.width, diagram.height, colors, transparent))
-  parts.push(buildStyleBlock(font, true))
+  parts.push(resolved
+    ? svgOpenTagStatic(diagram.width, diagram.height, resolved.bg, transparent)
+    : svgOpenTag(diagram.width, diagram.height, colors, transparent))
+  parts.push(resolved
+    ? buildStaticStyleBlock(font, true, fontMode)
+    : buildStyleBlock(font, true, fontMode))
   parts.push('<defs>')
   parts.push(relationshipMarkerDefs())
   parts.push('</defs>')
@@ -63,7 +70,8 @@ export function renderClassSvg(
   }
 
   parts.push('</svg>')
-  return parts.join('\n')
+  const svg = parts.join('\n')
+  return resolved ? applyResolvedColors(svg, resolved) : svg
 }
 
 // ============================================================================

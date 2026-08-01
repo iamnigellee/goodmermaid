@@ -128,6 +128,9 @@ export interface PositionedGroup {
 // See src/theme.ts for the full variable system.
 // ============================================================================
 
+export type ColorMode = 'css-variables' | 'static'
+export type FontMode = 'external' | 'system' | 'embedded'
+
 export interface RenderOptions {
   /** Background color → CSS variable --bg. Default: '#FFFFFF' */
   bg?: string
@@ -149,6 +152,10 @@ export interface RenderOptions {
 
   /** Font family for all text. Default: 'Inter' */
   font?: string
+  /** Color output strategy. Default: 'css-variables'. */
+  colorMode?: ColorMode
+  /** Font loading strategy. Default: 'external'. */
+  fontMode?: FontMode
   /** Canvas padding in px. Default: 40 */
   padding?: number
   /** Horizontal spacing between sibling nodes. Default: 24 */

@@ -1,6 +1,14 @@
 import type { PositionedGraph, PositionedNode, PositionedEdge, PositionedGroup, Point } from './types.ts'
-import type { DiagramColors } from './theme.ts'
-import { svgOpenTag, buildStyleBlock } from './theme.ts'
+import type { FontMode } from './types.ts'
+import type { DiagramColors, ResolvedColors } from './theme.ts'
+import {
+  applyResolvedColors,
+  buildStaticStyleBlock,
+  buildStyleBlock,
+  normalizeStaticColor,
+  svgOpenTag,
+  svgOpenTagStatic,
+} from './theme.ts'
 import { FONT_SIZES, FONT_WEIGHTS, STROKE_WIDTHS, ARROW_HEAD, estimateTextWidth, TEXT_BASELINE_SHIFT } from './styles.ts'
 import { measureMultilineText } from './text-metrics.ts'
 import { renderMultilineText, renderMultilineTextWithBackground, escapeXml } from './multiline-utils.ts'
@@ -36,18 +44,25 @@ export function renderSvg(
   graph: PositionedGraph,
   colors: DiagramColors,
   font: string = 'Inter',
-  transparent: boolean = false
+  transparent: boolean = false,
+  resolved: ResolvedColors | null = null,
+  fontMode: FontMode = 'external',
 ): string {
   const parts: string[] = []
+  const renderGraph = resolved ? normalizeStaticInlineStyles(graph) : graph
 
   // SVG root with CSS variables + style block + defs
-  parts.push(svgOpenTag(graph.width, graph.height, colors, transparent))
-  parts.push(buildStyleBlock(font, false))
+  parts.push(resolved
+    ? svgOpenTagStatic(graph.width, graph.height, resolved.bg, transparent)
+    : svgOpenTag(graph.width, graph.height, colors, transparent))
+  parts.push(resolved
+    ? buildStaticStyleBlock(font, false, fontMode)
+    : buildStyleBlock(font, false, fontMode))
   parts.push('<defs>')
   parts.push(arrowMarkerDefs())
   // Per-color arrow markers for edges with custom stroke via linkStyle
   const customStrokeColors = new Set<string>()
-  for (const edge of graph.edges) {
+  for (const edge of renderGraph.edges) {
     if (edge.inlineStyle?.stroke) {
       customStrokeColors.add(edge.inlineStyle.stroke)
     }
@@ -58,32 +73,66 @@ export function renderSvg(
   parts.push('</defs>')
 
   // 1. Subgraph backgrounds (group rectangles with header bands)
-  for (const group of graph.groups) {
+  for (const group of renderGraph.groups) {
     parts.push(renderGroup(group, font))
   }
 
   // 2. Edges (polylines — rendered behind nodes)
   // Each edge is a <polyline> with semantic data-* attributes
-  for (const edge of graph.edges) {
+  for (const edge of renderGraph.edges) {
     parts.push(renderEdge(edge))
   }
 
   // 3. Edge labels (positioned at midpoint of edge)
   // Each label is wrapped in <g class="edge-label">
-  for (const edge of graph.edges) {
+  for (const edge of renderGraph.edges) {
     if (edge.label) {
       parts.push(renderEdgeLabel(edge, font))
     }
   }
 
   // 4. Nodes (shape + label wrapped in <g class="node">)
-  for (const node of graph.nodes) {
+  for (const node of renderGraph.nodes) {
     parts.push(renderNode(node, font))
   }
 
   parts.push('</svg>')
 
-  return parts.join('\n')
+  const svg = parts.join('\n')
+  return resolved ? applyResolvedColors(svg, resolved) : svg
+}
+
+const STATIC_COLOR_PROPERTIES = new Set(['fill', 'stroke', 'color'])
+
+function normalizeStaticStyle(
+  style: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!style) return undefined
+
+  const normalized: Record<string, string> = {}
+  for (const [property, value] of Object.entries(style)) {
+    if (!STATIC_COLOR_PROPERTIES.has(property)) {
+      normalized[property] = value
+      continue
+    }
+    const color = normalizeStaticColor(value)
+    if (color) normalized[property] = color
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined
+}
+
+function normalizeStaticInlineStyles(graph: PositionedGraph): PositionedGraph {
+  return {
+    ...graph,
+    nodes: graph.nodes.map(node => ({
+      ...node,
+      inlineStyle: normalizeStaticStyle(node.inlineStyle),
+    })),
+    edges: graph.edges.map(edge => ({
+      ...edge,
+      inlineStyle: normalizeStaticStyle(edge.inlineStyle),
+    })),
+  }
 }
 
 // ============================================================================

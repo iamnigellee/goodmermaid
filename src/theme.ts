@@ -12,6 +12,7 @@
 // ============================================================================
 
 import { escapeXmlAttribute, sanitizeCssColor, sanitizeFontName } from './sanitize.ts'
+import type { RenderOptions } from './types.ts'
 
 // ============================================================================
 // Types
@@ -158,6 +159,12 @@ export const THEMES: Record<string, DiagramColors> = {
 
 export type ThemeName = keyof typeof THEMES
 
+/** Platform font stack used when network font loading is disabled. */
+export const SYSTEM_FONT_STACK = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+
+/** Platform monospace stack used for code-like labels without network fonts. */
+export const SYSTEM_MONO_FONT_STACK = "ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', monospace"
+
 // ============================================================================
 // Shiki theme extraction
 //
@@ -223,6 +230,261 @@ export function fromShikiTheme(theme: ShikiThemeLike): DiagramColors {
 }
 
 // ============================================================================
+// Static color resolution
+// ============================================================================
+
+/** Parsed RGB color with an optional 8-bit alpha channel. */
+export interface RGBA {
+  r: number
+  g: number
+  b: number
+  a?: number
+}
+
+/** Supported literal color formats for static output. */
+export const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
+
+/** Assert that a value can be resolved without CSS color evaluation. */
+export function validateHexColor(value: string, label: string): void {
+  if (!HEX_RE.test(value)) {
+    throw new Error(
+      `Invalid color for '${label}': '${value}'. ` +
+      'Static color mode supports #RGB, #RRGGBB, or #RRGGBBAA values only.'
+    )
+  }
+}
+
+/** Parse #RGB, #RRGGBB, or #RRGGBBAA into numeric channels. */
+export function parseHex(hex: string): RGBA {
+  if (!HEX_RE.test(hex)) {
+    throw new Error(
+      `Invalid hex color: '${hex}'. Expected #RGB, #RRGGBB, or #RRGGBBAA.`
+    )
+  }
+  let value = hex.slice(1)
+  if (value.length === 3) {
+    value = [...value].map(channel => channel + channel).join('')
+  }
+
+  const parsed: RGBA = {
+    r: Number.parseInt(value.slice(0, 2), 16),
+    g: Number.parseInt(value.slice(2, 4), 16),
+    b: Number.parseInt(value.slice(4, 6), 16),
+  }
+  if (value.length === 8) parsed.a = Number.parseInt(value.slice(6, 8), 16)
+  return parsed
+}
+
+/** Serialize numeric channels as lowercase #RRGGBB or #RRGGBBAA. */
+export function toHex(rgba: RGBA): string {
+  const channel = (value: number): string => {
+    const finiteValue = Number.isFinite(value) ? value : 0
+    return Math.round(Math.max(0, Math.min(255, finiteValue))).toString(16).padStart(2, '0')
+  }
+  const rgb = `#${channel(rgba.r)}${channel(rgba.g)}${channel(rgba.b)}`
+  return rgba.a !== undefined && rgba.a !== 255 ? `${rgb}${channel(rgba.a)}` : rgb
+}
+
+/** Equivalent to color-mix(in srgb, fg pct%, bg) for literal hex colors. */
+export function colorMix(fg: string, bg: string, pct: number): string {
+  const foreground = parseHex(fg)
+  const background = parseHex(bg)
+  const ratio = pct / 100
+  const mixed: RGBA = {
+    r: background.r + ratio * (foreground.r - background.r),
+    g: background.g + ratio * (foreground.g - background.g),
+    b: background.b + ratio * (foreground.b - background.b),
+  }
+
+  if (foreground.a !== undefined || background.a !== undefined) {
+    const foregroundAlpha = foreground.a ?? 255
+    const backgroundAlpha = background.a ?? 255
+    mixed.a = backgroundAlpha + ratio * (foregroundAlpha - backgroundAlpha)
+  }
+  return toHex(mixed)
+}
+
+interface ColorDerivationRule {
+  cssVar: string
+  mixKey: keyof typeof MIX | null
+  override: keyof DiagramColors | null
+  source: 'fg' | 'bg' | null
+}
+
+/** Shared derivation graph for dynamic CSS and static literal colors. */
+export const COLOR_GRAPH: readonly ColorDerivationRule[] = [
+  { cssVar: '_text',         mixKey: 'text',        override: null,      source: 'fg' },
+  { cssVar: '_text-sec',     mixKey: 'textSec',     override: 'muted',   source: null },
+  { cssVar: '_text-muted',   mixKey: 'textMuted',   override: 'muted',   source: null },
+  { cssVar: '_text-faint',   mixKey: 'textFaint',   override: null,      source: null },
+  { cssVar: '_line',         mixKey: 'line',        override: 'line',    source: null },
+  { cssVar: '_arrow',        mixKey: 'arrow',       override: 'accent',  source: null },
+  { cssVar: '_node-fill',    mixKey: 'nodeFill',    override: 'surface', source: null },
+  { cssVar: '_node-stroke',  mixKey: 'nodeStroke',  override: 'border',  source: null },
+  { cssVar: '_group-fill',   mixKey: null,          override: null,      source: 'bg' },
+  { cssVar: '_group-hdr',    mixKey: 'groupHeader', override: null,      source: null },
+  { cssVar: '_inner-stroke', mixKey: 'innerStroke', override: null,      source: null },
+  { cssVar: '_key-badge',    mixKey: 'keyBadge',    override: null,      source: null },
+] as const
+
+/** Every private SVG color resolved to a literal hex value. */
+export interface ResolvedColors {
+  bg: string
+  _text: string
+  '_text-sec': string
+  '_text-muted': string
+  '_text-faint': string
+  _line: string
+  _arrow: string
+  '_node-fill': string
+  '_node-stroke': string
+  '_group-fill': string
+  '_group-hdr': string
+  '_inner-stroke': string
+  '_key-badge': string
+}
+
+export type ColorKey = Exclude<keyof ResolvedColors, 'bg'>
+
+/** Resolve the current CSS color cascade to literal colors. */
+export function resolveColors(colors: DiagramColors): ResolvedColors {
+  validateHexColor(colors.bg, 'bg')
+  validateHexColor(colors.fg, 'fg')
+
+  const result: Record<string, string> = { bg: colors.bg }
+  for (const rule of COLOR_GRAPH) {
+    if (rule.source === 'fg') {
+      result[rule.cssVar] = colors.fg
+      continue
+    }
+    if (rule.source === 'bg') {
+      result[rule.cssVar] = colors.bg
+      continue
+    }
+
+    const overrideValue = rule.override ? colors[rule.override] : undefined
+    if (overrideValue) {
+      validateHexColor(overrideValue, rule.override!)
+      result[rule.cssVar] = overrideValue
+    } else {
+      result[rule.cssVar] = colorMix(colors.fg, colors.bg, MIX[rule.mixKey!])
+    }
+  }
+
+  return result as unknown as ResolvedColors
+}
+
+/** Access a private color as a CSS variable or a resolved literal. */
+export function createColorFn(resolved: ResolvedColors | null): {
+  (key: ColorKey): string
+  bg: () => string
+} {
+  const color = ((key: ColorKey) => resolved?.[key] ?? `var(--${key})`) as {
+    (key: ColorKey): string
+    bg: () => string
+  }
+  color.bg = () => resolved?.bg ?? 'var(--bg)'
+  return color
+}
+
+/** Replace all known theme variables in an SVG and reject unresolved variables. */
+export function applyResolvedColors(svg: string, resolved: ResolvedColors): string {
+  const replacements: ReadonlyArray<readonly [string, string]> = [
+    ['bg', resolved.bg],
+    ['fg', resolved._text],
+    ['line', resolved._line],
+    ['accent', resolved._arrow],
+    ['muted', resolved['_text-muted']],
+    ['surface', resolved['_node-fill']],
+    ['border', resolved['_node-stroke']],
+    ...COLOR_GRAPH.map(rule => [rule.cssVar, resolved[rule.cssVar as ColorKey]] as const),
+  ]
+
+  let output = svg
+  for (const [name, value] of replacements) {
+    output = output.split(`var(--${name})`).join(value)
+  }
+  output = output.replace(/\b(fill|stroke)="transparent"/gi, '$1="#00000000"')
+  if (output.includes('var(')) {
+    throw new Error('Static color mode produced an unresolved CSS variable')
+  }
+  return output
+}
+
+/** Sanitize render colors before strict static resolution. */
+export function sanitizeStaticColors(colors: DiagramColors): DiagramColors {
+  return {
+    bg: sanitizeCssColor(colors.bg, DEFAULTS.bg) ?? DEFAULTS.bg,
+    fg: sanitizeCssColor(colors.fg, DEFAULTS.fg) ?? DEFAULTS.fg,
+    line: sanitizeCssColor(colors.line),
+    accent: sanitizeCssColor(colors.accent),
+    muted: sanitizeCssColor(colors.muted),
+    surface: sanitizeCssColor(colors.surface),
+    border: sanitizeCssColor(colors.border),
+  }
+}
+
+/** Normalize an inline paint value to hex, or omit it when CSS evaluation is required. */
+export function normalizeStaticColor(value: string): string | undefined {
+  if (HEX_RE.test(value)) return value
+  if (/^transparent$/i.test(value)) return '#00000000'
+
+  const match = value.match(
+    /^rgba?\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)(?:\s*,\s*(\d+(?:\.\d+)?))?\s*\)$/i
+  )
+  if (!match) return undefined
+
+  const rgba: RGBA = {
+    r: Number(match[1]),
+    g: Number(match[2]),
+    b: Number(match[3]),
+  }
+  if (match[4] !== undefined) {
+    const alpha = Number(match[4])
+    rgba.a = alpha <= 1 ? alpha * 255 : alpha
+  }
+  return toHex(rgba)
+}
+
+/** Build an SVG opening tag that contains no CSS custom properties. */
+export function svgOpenTagStatic(
+  width: number,
+  height: number,
+  bg: string,
+  transparent?: boolean,
+): string {
+  const safeBg = HEX_RE.test(bg) ? bg : DEFAULTS.bg
+  const background = transparent ? 'none' : safeBg
+  const style = escapeXmlAttribute(`background:${background}`)
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" ` +
+    `width="${width}" height="${height}" style="${style}">`
+  )
+}
+
+/** Build the font-only style block used by static color output. */
+export function buildStaticStyleBlock(
+  font: string,
+  hasMonoFont: boolean,
+  fontMode: NonNullable<RenderOptions['fontMode']> = 'external',
+): string {
+  const safeFont = sanitizeFontName(font)
+  const textStack = fontMode === 'system'
+    ? SYSTEM_FONT_STACK
+    : `'${safeFont}', system-ui, sans-serif`
+  const monoStack = fontMode === 'system'
+    ? SYSTEM_MONO_FONT_STACK
+    : "'JetBrains Mono', 'SF Mono', 'Fira Code', ui-monospace, monospace"
+
+  return [
+    '<style>',
+    `  text { font-family: ${textStack}; }`,
+    ...(hasMonoFont ? [`  .mono { font-family: ${monoStack}; }`] : []),
+    '</style>',
+  ].join('\n')
+}
+
+// ============================================================================
 // SVG style block — the CSS variable derivation system
 //
 // Generates the <style> content that maps user-facing variables (--bg, --fg,
@@ -237,7 +499,11 @@ export function fromShikiTheme(theme: ShikiThemeLike): DiagramColors {
  * a parent element, it's used directly. When unset, the fallback computes
  * a blended value from --fg and --bg using color-mix().
  */
-export function buildStyleBlock(font: string, hasMonoFont: boolean): string {
+export function buildStyleBlock(
+  font: string,
+  hasMonoFont: boolean,
+  fontMode: NonNullable<RenderOptions['fontMode']> = 'external',
+): string {
   const safeFont = sanitizeFontName(font)
   const fontImports = [
     `@import url('https://fonts.googleapis.com/css2?family=${encodeURIComponent(safeFont)}:wght@400;500;600;700&amp;display=swap');`,
@@ -262,6 +528,17 @@ export function buildStyleBlock(font: string, hasMonoFont: boolean): string {
     --_group-hdr:     color-mix(in srgb, var(--fg) ${MIX.groupHeader}%, var(--bg));
     --_inner-stroke:  color-mix(in srgb, var(--fg) ${MIX.innerStroke}%, var(--bg));
     --_key-badge:     color-mix(in srgb, var(--fg) ${MIX.keyBadge}%, var(--bg));`
+
+  if (fontMode === 'system') {
+    return [
+      '<style>',
+      `  text { font-family: ${SYSTEM_FONT_STACK}; }`,
+      ...(hasMonoFont ? [`  .mono { font-family: ${SYSTEM_MONO_FONT_STACK}; }`] : []),
+      `  svg {${derivedVars}`,
+      `  }`,
+      '</style>',
+    ].join('\n')
+  }
 
   return [
     '<style>',

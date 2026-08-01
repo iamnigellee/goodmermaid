@@ -19,9 +19,21 @@
 //   const svg = renderMermaidSVG('graph TD\n  A --> B')
 // ============================================================================
 
-export type { RenderOptions, MermaidGraph, PositionedGraph } from './types.ts'
-export type { DiagramColors, ThemeName } from './theme.ts'
-export { fromShikiTheme, THEMES, DEFAULTS } from './theme.ts'
+export type { RenderOptions, ColorMode, FontMode, MermaidGraph, PositionedGraph } from './types.ts'
+export type { DiagramColors, ThemeName, ResolvedColors, ColorKey, RGBA } from './theme.ts'
+export {
+  fromShikiTheme,
+  THEMES,
+  DEFAULTS,
+  COLOR_GRAPH,
+  HEX_RE,
+  parseHex,
+  toHex,
+  colorMix,
+  validateHexColor,
+  resolveColors,
+  createColorFn,
+} from './theme.ts'
 export { parseMermaid } from './parser.ts'
 export { renderMermaidASCII, renderMermaidAscii } from './ascii/index.ts'
 export type { AsciiRenderOptions } from './ascii/index.ts'
@@ -31,8 +43,8 @@ import { parseMermaid } from './parser.ts'
 import { layoutGraphSync } from './layout.ts'
 import { renderSvg } from './renderer.ts'
 import type { RenderOptions } from './types.ts'
-import type { DiagramColors } from './theme.ts'
-import { DEFAULTS } from './theme.ts'
+import type { DiagramColors, ResolvedColors } from './theme.ts'
+import { DEFAULTS, resolveColors, sanitizeStaticColors } from './theme.ts'
 
 import { parseSequenceDiagram } from './sequence/parser.ts'
 import { layoutSequenceDiagram } from './sequence/layout.ts'
@@ -119,6 +131,12 @@ export function renderMermaidSVG(
   const colors = buildColors(options)
   const font = options.font ?? 'Inter'
   const transparent = options.transparent ?? false
+  const colorMode = options.colorMode ?? 'css-variables'
+  const fontMode = options.fontMode ?? 'external'
+  const renderColors = colorMode === 'static' ? sanitizeStaticColors(colors) : colors
+  const resolved: ResolvedColors | null = colorMode === 'static'
+    ? resolveColors(renderColors)
+    : null
   const diagramType = detectDiagramType(text)
 
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('%%'))
@@ -127,28 +145,28 @@ export function renderMermaidSVG(
     case 'sequence': {
       const diagram = parseSequenceDiagram(lines)
       const positioned = layoutSequenceDiagram(diagram, options)
-      return renderSequenceSvg(positioned, colors, font, transparent)
+      return renderSequenceSvg(positioned, renderColors, font, transparent, resolved, fontMode)
     }
     case 'class': {
       const diagram = parseClassDiagram(lines)
       const positioned = layoutClassDiagramSync(diagram, options)
-      return renderClassSvg(positioned, colors, font, transparent)
+      return renderClassSvg(positioned, renderColors, font, transparent, resolved, fontMode)
     }
     case 'er': {
       const diagram = parseErDiagram(lines)
       const positioned = layoutErDiagramSync(diagram, options)
-      return renderErSvg(positioned, colors, font, transparent)
+      return renderErSvg(positioned, renderColors, font, transparent, resolved, fontMode)
     }
     case 'xychart': {
       const chart = parseXYChart(lines)
       const positioned = layoutXYChart(chart, options)
-      return renderXYChartSvg(positioned, colors, font, transparent, options.interactive ?? false)
+      return renderXYChartSvg(positioned, renderColors, font, transparent, options.interactive ?? false, resolved, fontMode)
     }
     case 'flowchart':
     default: {
       const graph = parseMermaid(text)
       const positioned = layoutGraphSync(graph, options)
-      return renderSvg(positioned, colors, font, transparent)
+      return renderSvg(positioned, renderColors, font, transparent, resolved, fontMode)
     }
   }
 }
