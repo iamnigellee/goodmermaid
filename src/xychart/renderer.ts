@@ -1,6 +1,16 @@
 import type { PositionedXYChart } from './types.ts'
-import type { DiagramColors } from '../theme.ts'
-import { svgOpenTag, buildStyleBlock } from '../theme.ts'
+import type { FontMode } from '../types.ts'
+import type { DiagramColors, ResolvedColors } from '../theme.ts'
+import {
+  applyResolvedColors,
+  buildStaticStyleBlock,
+  buildStyleBlock,
+  colorMix,
+  parseHex,
+  svgOpenTag,
+  svgOpenTagStatic,
+  toHex,
+} from '../theme.ts'
 import { TEXT_BASELINE_SHIFT, estimateTextWidth } from '../styles.ts'
 import { getSeriesColor, CHART_ACCENT_FALLBACK } from './colors.ts'
 
@@ -61,23 +71,36 @@ export function renderXYChartSvg(
   font: string = 'Inter',
   transparent: boolean = false,
   interactive: boolean = false,
+  resolved: ResolvedColors | null = null,
+  fontMode: FontMode = 'external',
 ): string {
   const parts: string[] = []
 
   // SVG root + base styles
   // Stamp data-xychart-colors so theme-switching JS knows how many series color vars to update
   const maxColorIdx = Math.max(0, ...chart.bars.map(b => b.colorIndex), ...chart.lines.map(l => l.colorIndex))
-  const svgTag = svgOpenTag(chart.width, chart.height, colors, transparent)
+  const svgTag = (resolved
+    ? svgOpenTagStatic(chart.width, chart.height, resolved.bg, transparent)
+    : svgOpenTag(chart.width, chart.height, colors, transparent))
     .replace('<svg ', `<svg data-xychart-colors="${maxColorIdx}" `)
   parts.push(svgTag)
-  parts.push(buildStyleBlock(font, false))
+  parts.push(resolved
+    ? buildStaticStyleBlock(font, false, fontMode)
+    : buildStyleBlock(font, false, fontMode))
 
   // Sparse lines (≤12 points) show dots by default
   const maxLinePoints = Math.max(...chart.lines.map(l => l.points.length), 0)
   const sparse = maxLinePoints > 0 && maxLinePoints <= 12
 
   // Chart-specific styles + gradient defs
-  const { style: chartCss, defs: chartDefs } = chartStyles(chart, interactive, sparse, colors.accent, colors.bg)
+  const { style: chartCss, defs: chartDefs } = chartStyles(
+    chart,
+    interactive,
+    sparse,
+    colors.accent,
+    colors.bg,
+    resolved,
+  )
   parts.push(chartCss)
   if (chartDefs) parts.push(chartDefs)
 
@@ -279,14 +302,24 @@ export function renderXYChartSvg(
   for (const g of dotOverlay) parts.push(g)
 
   parts.push('</svg>')
-  return parts.join('\n')
+  const svg = parts.join('\n')
+  return resolved ? applyResolvedColors(svg, resolved) : svg
 }
 
 // ============================================================================
 // Chart-specific CSS styles
 // ============================================================================
 
-function chartStyles(chart: PositionedXYChart, interactive: boolean, sparse: boolean, themeAccent?: string, bgColor?: string): { style: string; defs: string } {
+function chartStyles(
+  chart: PositionedXYChart,
+  interactive: boolean,
+  sparse: boolean,
+  themeAccent?: string,
+  bgColor?: string,
+  resolved: ResolvedColors | null = null,
+): { style: string; defs: string } {
+  if (resolved) return staticChartStyles(chart, interactive, themeAccent, resolved)
+
   const accentHex = themeAccent ?? CHART_ACCENT_FALLBACK
 
   // Collect all unique global color indices from bars + lines
@@ -339,6 +372,59 @@ ${seriesRules.join('\n')}${tipRules}
 </style>`
 
   return { style, defs: '' }
+}
+
+function staticChartStyles(
+  chart: PositionedXYChart,
+  interactive: boolean,
+  themeAccent: string | undefined,
+  resolved: ResolvedColors,
+): { style: string; defs: string } {
+  const accent = themeAccent ?? CHART_ACCENT_FALLBACK
+  const opaqueAccent = toOpaqueHex(accent)
+  const opaqueBackground = toOpaqueHex(resolved.bg)
+  const colorIndices = new Set<number>()
+  for (const bar of chart.bars) colorIndices.add(bar.colorIndex)
+  for (const line of chart.lines) colorIndices.add(line.colorIndex)
+
+  const seriesRules: string[] = []
+  for (const index of [...colorIndices].sort((a, b) => a - b)) {
+    const color = index === 0
+      ? accent
+      : getSeriesColor(index, opaqueAccent, opaqueBackground)
+    const barFill = colorMix(color, resolved.bg, 25)
+    seriesRules.push(`  .xychart-bar.xychart-color-${index} { stroke: ${color}; fill: ${barFill}; }`)
+    seriesRules.push(`  path.xychart-color-${index}, line.xychart-color-${index} { stroke: ${color}; }`)
+    seriesRules.push(`  circle.xychart-color-${index} { fill: ${color}; }`)
+  }
+
+  const shadowColor = toHex({ ...parseHex(resolved._text), a: 51 })
+  const tipRules = interactive ? `
+  .xychart-tip { opacity: 0; pointer-events: none; }
+  .xychart-tip-bg { fill: ${resolved._text}; filter: drop-shadow(0 1px 3px ${shadowColor}); }
+  .xychart-tip-text { fill: ${resolved.bg}; font-size: ${TIP.fontSize}px; font-weight: ${TIP.fontWeight}; }
+  .xychart-tip-ptr { fill: ${resolved._text}; }
+  .xychart-bar-group:hover .xychart-tip,
+  .xychart-dot-group:hover .xychart-tip { opacity: 1; }` : ''
+
+  const style = `<style>
+  .xychart-grid { fill: ${resolved['_inner-stroke']}; stroke: none; opacity: 0.65; }
+  .xychart-bar { stroke-width: 1.5; }
+  .xychart-line { fill: none; stroke-width: ${CHART_FONT.lineWidth}; stroke-linecap: round; stroke-linejoin: round; }
+  .xychart-line-shadow { fill: none; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; opacity: 0.12; }
+  .xychart-dot { stroke: ${resolved.bg}; stroke-width: 2; }
+  .xychart-label { fill: ${resolved['_text-muted']}; }
+  .xychart-axis-title { fill: ${resolved['_text-sec']}; }
+  .xychart-title { fill: ${resolved._text}; }
+${seriesRules.join('\n')}${tipRules}
+</style>`
+
+  return { style, defs: '' }
+}
+
+function toOpaqueHex(color: string): string {
+  const { r: red, g: green, b: blue } = parseHex(color)
+  return toHex({ r: red, g: green, b: blue })
 }
 
 
@@ -545,5 +631,3 @@ function escapeXml(text: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
 }
-
-

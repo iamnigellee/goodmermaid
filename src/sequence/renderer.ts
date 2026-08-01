@@ -1,6 +1,7 @@
 import type { PositionedSequenceDiagram, PositionedActor, Lifeline, PositionedMessage, Activation, PositionedBlock, PositionedNote } from './types.ts'
-import type { DiagramColors } from '../theme.ts'
-import { svgOpenTag, buildStyleBlock } from '../theme.ts'
+import type { FontMode } from '../types.ts'
+import type { DiagramColors, ResolvedColors } from '../theme.ts'
+import { applyResolvedColors, buildStaticStyleBlock, buildStyleBlock, svgOpenTag, svgOpenTagStatic } from '../theme.ts'
 import { FONT_SIZES, FONT_WEIGHTS, STROKE_WIDTHS, ARROW_HEAD, estimateTextWidth, TEXT_BASELINE_SHIFT } from '../styles.ts'
 import { renderMultilineText, escapeXml as escapeXmlUtil } from '../multiline-utils.ts'
 
@@ -29,13 +30,19 @@ export function renderSequenceSvg(
   diagram: PositionedSequenceDiagram,
   colors: DiagramColors,
   font: string = 'Inter',
-  transparent: boolean = false
+  transparent: boolean = false,
+  resolved: ResolvedColors | null = null,
+  fontMode: FontMode = 'external',
 ): string {
   const parts: string[] = []
 
   // SVG root with CSS variables + style block + defs
-  parts.push(svgOpenTag(diagram.width, diagram.height, colors, transparent))
-  parts.push(buildStyleBlock(font, false))
+  parts.push(resolved
+    ? svgOpenTagStatic(diagram.width, diagram.height, resolved.bg, transparent)
+    : svgOpenTag(diagram.width, diagram.height, colors, transparent))
+  parts.push(resolved
+    ? buildStaticStyleBlock(font, false, fontMode)
+    : buildStyleBlock(font, false, fontMode))
   parts.push('<defs>')
 
   // Arrow marker definitions
@@ -73,7 +80,8 @@ export function renderSequenceSvg(
   }
 
   parts.push('</svg>')
-  return parts.join('\n')
+  const svg = parts.join('\n')
+  return resolved ? applyResolvedColors(svg, resolved) : svg
 }
 
 // ============================================================================
