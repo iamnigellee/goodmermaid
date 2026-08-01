@@ -6,6 +6,18 @@ import {
   renderMermaidSVG,
   renderMermaidSVGAsync,
 } from 'beautiful-mermaid'
+import {
+  DEFAULT_ASCII_THEME,
+  renderMermaidASCII as renderMermaidASCIISubentry,
+} from 'beautiful-mermaid/ascii'
+import {
+  renderMermaidSVG as renderMermaidSVGSubentry,
+} from 'beautiful-mermaid/svg'
+import {
+  DEFAULTS,
+  buildStyleBlock,
+  svgOpenTag,
+} from 'beautiful-mermaid/themes'
 
 const diagram = 'graph LR; A --> B --> C'
 
@@ -33,4 +45,19 @@ test('the packed package renders in a Node ESM consumer', async () => {
   console.log(`[packtest] SVG preview: ${svgPreview}`)
   console.log(`[packtest] ASCII render:\n${ascii}`)
   console.log('[packtest] Async SVG render resolved successfully')
+})
+
+test('the packed package exposes working subpath exports', () => {
+  const ascii = renderMermaidASCIISubentry(diagram, { colorMode: 'none' })
+  assert.match(ascii, /\bA\b/u)
+  assert.equal(DEFAULT_ASCII_THEME.fg.startsWith('#'), true)
+
+  const svg = renderMermaidSVGSubentry(diagram)
+  assert.match(svg, /<svg\b/)
+
+  assert.match(buildStyleBlock('Inter', false), /<style>/)
+  assert.match(
+    svgOpenTag(100, 50, DEFAULTS),
+    /^<svg [^>]*width="100"[^>]*height="50"/,
+  )
 })
