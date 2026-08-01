@@ -7,22 +7,73 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  bun-test:
+    name: Bun tests
     runs-on: ubuntu-latest
 
     steps:
+      # Fetch the exact revision under test.
       - uses: actions/checkout@v4
 
+      # Pin Bun to the development version to avoid runtime and ELK drift.
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
-          bun-version: latest
+          bun-version: 1.3.14
 
+      # Reproduce the dependency graph recorded in bun.lock.
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
+      # Keep the complete test suite on the native Bun runtime.
       - name: Run tests
         run: bun test
 
+  node-compatibility:
+    name: Node.js ${{ matrix.node }} compatibility
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [18, 20, 22]
+
+    steps:
+      # Fetch the exact revision under test.
+      - uses: actions/checkout@v4
+
+      # Exercise the supported Node.js release selected by the matrix.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # Use the same pinned Bun release for installation and build tooling.
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: 1.3.14
+
+      # Reproduce the dependency graph recorded in bun.lock.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Catch source-level type errors before testing the package artifact.
       - name: Type check
         run: bun x tsc --noEmit
+
+      # Produce the ESM entry point consumed by Node.js users.
+      - name: Build package
+        run: bun run build
+
+      # Import the built package with Node itself and render one diagram.
+      - name: Smoke test built ESM package
+        run: |
+          node --input-type=module <<'NODE'
+          import { renderMermaidSVG } from './dist/index.js'
+
+          const svg = renderMermaidSVG(`graph TD
+            A --> B`)
+
+          if (!svg.startsWith('<svg') || !svg.endsWith('</svg>')) {
+            throw new Error('Built ESM package did not render a complete SVG')
+          }
+          NODE
