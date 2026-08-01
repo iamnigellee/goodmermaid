@@ -39,6 +39,7 @@
   "files": ["src/", "dist/", "LICENSE", "README.md"],
   "scripts": {
     "test": "bun test src/__tests__/",
+    "test:pack": "bash scripts/pack-smoke.sh",
     "samples": "bun run index.ts",
     "editor": "bun run editor.ts",
     "dev": "bun run dev.ts",
