@@ -46,7 +46,7 @@ export function getBoxDimensions(label: string, options: ShapeRenderOptions): Sh
       width: maxLineWidth,
       height: lineCount,
     },
-    // Grid layout: [border=1, content, border=1]
+    // Grid cells: [border=1, content, border=1]
     gridColumns: [1, innerWidth, 1],
     gridRows: [1, innerHeight, 1],
   }

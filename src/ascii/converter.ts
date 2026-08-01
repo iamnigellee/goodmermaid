@@ -105,7 +105,7 @@ export function convertToAsciiGraph(parsed: MermaidGraph, config: AsciiConfig): 
     config,
     offsetX: 0,
     offsetY: 0,
-    bundles: [], // Populated by analyzeEdgeBundles() during layout
+    bundles: [], // Populated by analyzeEdgeBundles() before drawing
   }
 }
 

@@ -11,6 +11,18 @@
       "bun": "./src/index.ts",
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./ascii": {
+      "import": "./dist/ascii-subentry.js",
+      "types": "./dist/ascii-subentry.d.ts"
+    },
+    "./svg": {
+      "import": "./dist/svg-subentry.js",
+      "types": "./dist/svg-subentry.d.ts"
+    },
+    "./themes": {
+      "import": "./dist/themes-subentry.js",
+      "types": "./dist/themes-subentry.d.ts"
     }
   },
   "repository": {
