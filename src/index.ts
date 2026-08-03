@@ -1,5 +1,5 @@
 // ============================================================================
-// beautiful-mermaid — public API
+// goodmermaid — public API
 //
 // Renders Mermaid diagrams to styled SVG strings.
 // Framework-agnostic, no DOM required. Pure TypeScript.
@@ -15,7 +15,7 @@
 // See src/theme.ts for the full variable system.
 //
 // Usage:
-//   import { renderMermaidSVG } from 'beautiful-mermaid'
+//   import { renderMermaidSVG } from 'goodmermaid'
 //   const svg = renderMermaidSVG('graph TD\n  A --> B')
 // ============================================================================
 

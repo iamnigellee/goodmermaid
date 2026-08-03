@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document specifies the architecture for adding `xychart-beta` / `xychart` support to beautiful-mermaid. The implementation follows the same parse → layout → render pipeline used by all other diagram types (ER, sequence, class, flowchart).
+This document specifies the architecture for adding `xychart-beta` / `xychart` support to goodmermaid. The implementation follows the same parse → layout → render pipeline used by all other diagram types (ER, sequence, class, flowchart).
 
 XY charts render bar charts, line charts, or combinations thereof, with categorical or numeric x-axes, numeric y-axes, optional titles, and optional horizontal orientation.
 

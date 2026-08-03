@@ -1,19 +1,19 @@
 <div align="center">
 
-# beautiful-mermaid
+# goodmermaid
 
 **Render Mermaid diagrams as beautiful SVGs or ASCII art**
 
 Ultra-fast, fully themeable, zero DOM dependencies. Built for the AI era.
 
-![beautiful-mermaid sequence diagram example](hero.png)
+![goodmermaid sequence diagram example](hero.png)
 
-[![npm version](https://img.shields.io/npm/v/beautiful-mermaid.svg)](https://www.npmjs.com/package/beautiful-mermaid)
+[![npm version](https://img.shields.io/npm/v/goodmermaid.svg)](https://www.npmjs.com/package/goodmermaid)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[**Live Demo & Samples**](https://agents.craft.do/mermaid)
+[Live Demo & Samples](index.html)
 
-**[→ Use it live in Craft Agents](https://agents.craft.do)**
+**[→ Browse the project](https://github.com/iamnigellee/goodmermaid)**
 
 </div>
 
@@ -30,7 +30,7 @@ Diagrams are essential for AI-assisted programming. When you're working with an 
 - **No terminal output** — Can't render to ASCII for CLI tools
 - **Heavy dependencies** — Pulls in a lot of code for simple diagrams
 
-We built `beautiful-mermaid` at [Craft](https://craft.do) to power diagrams in [Craft Agents](https://agents.craft.do). It's fast, beautiful, and works everywhere—from rich UIs to plain terminals.
+`goodmermaid` is an independent, fast, and themeable Mermaid rendering library. It works everywhere—from rich UIs to plain terminals.
 
 
 The ASCII rendering engine is based on [mermaid-ascii](https://github.com/AlexanderGrooff/mermaid-ascii) by Alexander Grooff. We ported it from Go to TypeScript and extended it. Thank you Alexander for the excellent foundation! (And inspiration that this was possible.)
@@ -50,11 +50,11 @@ The ASCII rendering engine is based on [mermaid-ascii](https://github.com/Alexan
 ## Installation
 
 ```bash
-npm install beautiful-mermaid
+npm install goodmermaid
 # or
-bun add beautiful-mermaid
+bun add goodmermaid
 # or
-pnpm add beautiful-mermaid
+pnpm add goodmermaid
 ```
 
 ## Quick Start
@@ -62,7 +62,7 @@ pnpm add beautiful-mermaid
 ### SVG Output
 
 ```typescript
-import { renderMermaidSVG } from 'beautiful-mermaid'
+import { renderMermaidSVG } from 'goodmermaid'
 
 const svg = renderMermaidSVG(`
   graph TD
@@ -79,7 +79,7 @@ Need async? Use `renderMermaidSVGAsync()` — same output, returns a `Promise<st
 ### ASCII Output
 
 ```typescript
-import { renderMermaidASCII } from 'beautiful-mermaid'
+import { renderMermaidASCII } from 'goodmermaid'
 
 const ascii = renderMermaidASCII(`graph LR; A --> B --> C`)
 ```
@@ -99,7 +99,7 @@ const ascii = renderMermaidASCII(`graph LR; A --> B --> C`)
 Because rendering is synchronous, you can use `useMemo()` for zero-flash diagram rendering:
 
 ```tsx
-import { renderMermaidSVG } from 'beautiful-mermaid'
+import { renderMermaidSVG } from 'goodmermaid'
 
 function MermaidDiagram({ code }: { code: string }) {
   const { svg, error } = React.useMemo(() => {
@@ -131,7 +131,7 @@ function MermaidDiagram({ code }: { code: string }) {
 
 ## Theming
 
-The theming system is the heart of `beautiful-mermaid`. It's designed to be both powerful and dead simple.
+The theming system is the heart of `goodmermaid`. It's designed to be both powerful and dead simple.
 
 ### The Two-Color Foundation
 
@@ -224,7 +224,7 @@ const svg = renderMermaidSVG(diagram, {
 | `one-dark` | Dark | `#282c34` | `#c678dd` |
 
 ```typescript
-import { renderMermaidSVG, THEMES } from 'beautiful-mermaid'
+import { renderMermaidSVG, THEMES } from 'goodmermaid'
 
 const svg = renderMermaidSVG(diagram, THEMES['tokyo-night'])
 ```
@@ -259,7 +259,7 @@ Use **any VS Code theme** directly via Shiki integration. This gives you access 
 
 ```typescript
 import { getSingletonHighlighter } from 'shiki'
-import { renderMermaidSVG, fromShikiTheme } from 'beautiful-mermaid'
+import { renderMermaidSVG, fromShikiTheme } from 'goodmermaid'
 
 // Load any theme from Shiki's registry
 const highlighter = await getSingletonHighlighter({
@@ -437,7 +437,7 @@ The chart renderer follows a clean, minimal design philosophy inspired by Apple 
 For terminal environments, CLI tools, or anywhere you need plain text, render to ASCII or Unicode box-drawing characters:
 
 ```typescript
-import { renderMermaidASCII } from 'beautiful-mermaid'
+import { renderMermaidASCII } from 'goodmermaid'
 
 // Unicode mode (default) — prettier box drawing
 const unicode = renderMermaidASCII(`graph LR; A --> B`)
@@ -580,6 +580,6 @@ MIT — see [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-Built with care by the team at [Craft](https://craft.do)
+Built with care by the GoodMermaid maintainers.
 
 </div>

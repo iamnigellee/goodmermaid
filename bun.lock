@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "beautiful-mermaid",
+      "name": "goodmermaid",
       "dependencies": {
         "elkjs": "^0.11.0",
         "entities": "^7.0.1",
